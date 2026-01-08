@@ -1,7 +1,6 @@
 package com.chummusbenshira.soundmachine
 
-import android.media.AudioAttributes
-import android.media.MediaPlayer
+import android.content.Context
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -40,9 +39,12 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
 import com.chummusbenshira.soundmachine.ui.theme.SoundMachineTheme
 import kotlinx.coroutines.delay
-import java.io.IOException
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,10 +64,11 @@ data class NoisePage(
 )
 
 @Composable
+@androidx.annotation.OptIn(UnstableApi::class)
 fun SoundMachineApp() {
     val pages = remember {
         listOf(
-            NoisePage(R.raw.whitenoise2, Color.White),
+            NoisePage(R.raw.whitenoise, Color.White),
             NoisePage(R.raw.pinknoise, Color(0xFFFFC0CB)), // Pink
             NoisePage(R.raw.brownnoise, Color(0xFF795548))  // Brown
         )
@@ -76,15 +79,10 @@ fun SoundMachineApp() {
     var showIndicator by remember { mutableStateOf(false) }
     
     val context = LocalContext.current
-    val mediaPlayer = remember {
-        MediaPlayer().apply {
-            setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .build()
-            )
-        }
+    
+    // ExoPlayer is much better at gapless looping than MediaPlayer
+    val exoPlayerManager = remember {
+        ExoPlayerManager(context)
     }
 
     // Handle visibility of indicator
@@ -100,34 +98,22 @@ fun SoundMachineApp() {
     // Handle track switching
     LaunchedEffect(pagerState.currentPage) {
         val resId = pages[pagerState.currentPage].resId
-        try {
-            mediaPlayer.reset()
-            val afd = context.resources.openRawResourceFd(resId)
-            if (afd != null) {
-                mediaPlayer.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-                afd.close()
-                mediaPlayer.prepare()
-                mediaPlayer.isLooping = true
-                if (isPlaying) {
-                    mediaPlayer.start()
-                }
-            }
-        } catch (e: IOException) {
-            Log.e("SoundMachine", "Error switching track", e)
-        } catch (e: Exception) {
-            Log.e("SoundMachine", "Error initializing track", e)
+        exoPlayerManager.setSource(resId)
+        if (isPlaying) {
+            exoPlayerManager.play()
         }
     }
-
+    
+    // Cleanup
     DisposableEffect(Unit) {
         onDispose {
-            mediaPlayer.release()
+            exoPlayerManager.release()
         }
     }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background // Placeholder, covered by Pager
+        color = MaterialTheme.colorScheme.background
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             HorizontalPager(
@@ -141,21 +127,9 @@ fun SoundMachineApp() {
                     onToggle = {
                         isPlaying = !isPlaying
                         if (isPlaying) {
-                            if (!mediaPlayer.isPlaying) {
-                                try {
-                                    mediaPlayer.start()
-                                } catch (e: Exception) {
-                                    Log.e("SoundMachine", "Error starting playback", e)
-                                }
-                            }
+                            exoPlayerManager.play()
                         } else {
-                            if (mediaPlayer.isPlaying) {
-                                try {
-                                    mediaPlayer.pause()
-                                } catch (e: Exception) {
-                                    Log.e("SoundMachine", "Error pausing playback", e)
-                                }
-                            }
+                            exoPlayerManager.pause()
                         }
                     }
                 )
@@ -201,6 +175,46 @@ fun SoundMachineApp() {
     }
 }
 
+// Wrapper for ExoPlayer to handle looping and source switching
+@UnstableApi 
+class ExoPlayerManager(private val context: Context) {
+    private var exoPlayer: ExoPlayer? = ExoPlayer.Builder(context).build()
+    private var currentResId: Int = 0
+
+    init {
+        exoPlayer?.repeatMode = Player.REPEAT_MODE_ONE
+    }
+
+    fun setSource(resId: Int) {
+        if (currentResId == resId) return
+        currentResId = resId
+        
+        // Construct the raw resource URI
+        val uri = "android.resource://${context.packageName}/$resId"
+        val mediaItem = MediaItem.fromUri(uri)
+        
+        exoPlayer?.setMediaItem(mediaItem)
+        exoPlayer?.prepare()
+    }
+
+    fun play() {
+        if (currentResId == 0) return
+        if (exoPlayer?.playbackState == Player.STATE_IDLE) {
+            exoPlayer?.prepare()
+        }
+        exoPlayer?.play()
+    }
+
+    fun pause() {
+        exoPlayer?.pause()
+    }
+
+    fun release() {
+        exoPlayer?.release()
+        exoPlayer = null
+    }
+}
+
 @Composable
 fun NoiseScreen(
     backgroundColor: Color,
@@ -214,13 +228,6 @@ fun NoiseScreen(
         backgroundColor
     }
     
-    // For border, if background is very light, use dark border. If dark, use light.
-    // Or stick to previous logic: MaterialTheme.colorScheme.onPrimaryContainer
-    // Since background is custom now (White, Pink, Brown), we need a contrasting border.
-    // Let's calculate contrast or just use Black/White based on background brightness.
-    // But previous logic used `MaterialTheme.colorScheme.onPrimaryContainer`.
-    // Let's try to maintain good visibility.
-    // Simple heuristic:
     val borderColor = if (backgroundColor.luminance() > 0.5f) Color.Black else Color.White
 
     Box(

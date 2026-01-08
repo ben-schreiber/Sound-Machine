@@ -54,6 +54,10 @@ dependencies {
     
     // Add foundation for Pager
     implementation("androidx.compose.foundation:foundation:1.7.5")
+    
+    // Media3 ExoPlayer for advanced playback features
+    implementation("androidx.media3:media3-exoplayer:1.5.0")
+    implementation("androidx.media3:media3-common:1.5.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
