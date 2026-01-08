@@ -52,6 +52,9 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     
+    // Add foundation for Pager
+    implementation("androidx.compose.foundation:foundation:1.7.5")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
