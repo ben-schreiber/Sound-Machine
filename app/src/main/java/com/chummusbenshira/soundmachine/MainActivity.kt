@@ -2,7 +2,6 @@ package com.chummusbenshira.soundmachine
 
 import android.content.Context
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -35,10 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.min
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -68,7 +67,7 @@ data class NoisePage(
 fun SoundMachineApp() {
     val pages = remember {
         listOf(
-            NoisePage(R.raw.whitenoise, Color.White),
+            NoisePage(R.raw.whitenoise, Color(0xFFFFFAF0)), // Floral White
             NoisePage(R.raw.pinknoise, Color(0xFFFFC0CB)), // Pink
             NoisePage(R.raw.brownnoise, Color(0xFF795548))  // Brown
         )
@@ -80,7 +79,6 @@ fun SoundMachineApp() {
     
     val context = LocalContext.current
     
-    // ExoPlayer is much better at gapless looping than MediaPlayer
     val exoPlayerManager = remember {
         ExoPlayerManager(context)
     }
@@ -96,12 +94,9 @@ fun SoundMachineApp() {
     }
 
     // Handle track switching
-    LaunchedEffect(pagerState.currentPage) {
+    LaunchedEffect(pagerState.currentPage, isPlaying) {
         val resId = pages[pagerState.currentPage].resId
-        exoPlayerManager.setSource(resId)
-        if (isPlaying) {
-            exoPlayerManager.play()
-        }
+        exoPlayerManager.setSource(resId, playWhenReady = isPlaying)
     }
     
     // Cleanup
@@ -116,26 +111,48 @@ fun SoundMachineApp() {
         color = MaterialTheme.colorScheme.background
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
+            // Layer 1: Background Pager
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
             ) { pageIndex ->
-                val page = pages[pageIndex]
-                NoiseScreen(
-                    backgroundColor = page.color,
-                    isPlaying = isPlaying,
-                    onToggle = {
-                        isPlaying = !isPlaying
-                        if (isPlaying) {
-                            exoPlayerManager.play()
-                        } else {
-                            exoPlayerManager.pause()
-                        }
-                    }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(pages[pageIndex].color)
                 )
             }
 
-            // Indicator
+            // Layer 2: Static Button Overlay
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                val configuration = LocalConfiguration.current
+                val screenWidth = configuration.screenWidthDp.dp
+                val screenHeight = configuration.screenHeightDp.dp
+                val buttonSize = min(screenWidth, screenHeight) * 0.8f
+
+                val currentBackgroundColor = pages[pagerState.currentPage].color
+                val borderColor = if (currentBackgroundColor.luminance() > 0.5f) Color.Black else Color.White
+
+                val buttonFillColor = if (isPlaying) {
+                    Color.White.copy(alpha = 0.3f)
+                } else {
+                    Color.Transparent
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(buttonSize)
+                        .clip(CircleShape)
+                        .background(buttonFillColor)
+                        .border(width = 4.dp, color = borderColor, shape = CircleShape)
+                        .clickable { isPlaying = !isPlaying }
+                )
+            }
+
+            // Layer 3: Indicator
             AnimatedVisibility(
                 visible = showIndicator,
                 enter = fadeIn(),
@@ -147,7 +164,7 @@ fun SoundMachineApp() {
                 Box(
                     modifier = Modifier
                         .background(
-                            MaterialTheme.colorScheme.secondaryContainer,
+                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
                             RoundedCornerShape(50)
                         )
                         .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -175,7 +192,6 @@ fun SoundMachineApp() {
     }
 }
 
-// Wrapper for ExoPlayer to handle looping and source switching
 @UnstableApi 
 class ExoPlayerManager(private val context: Context) {
     private var exoPlayer: ExoPlayer? = ExoPlayer.Builder(context).build()
@@ -185,28 +201,17 @@ class ExoPlayerManager(private val context: Context) {
         exoPlayer?.repeatMode = Player.REPEAT_MODE_ONE
     }
 
-    fun setSource(resId: Int) {
-        if (currentResId == resId) return
-        currentResId = resId
-        
-        // Construct the raw resource URI
-        val uri = "android.resource://${context.packageName}/$resId"
-        val mediaItem = MediaItem.fromUri(uri)
-        
-        exoPlayer?.setMediaItem(mediaItem)
-        exoPlayer?.prepare()
-    }
-
-    fun play() {
-        if (currentResId == 0) return
-        if (exoPlayer?.playbackState == Player.STATE_IDLE) {
+    fun setSource(resId: Int, playWhenReady: Boolean) {
+        val isNewSource = currentResId != resId
+        if (isNewSource) {
+            currentResId = resId
+            val uri = "android.resource://${context.packageName}/$resId"
+            val mediaItem = MediaItem.fromUri(uri)
+            exoPlayer?.setMediaItem(mediaItem)
             exoPlayer?.prepare()
         }
-        exoPlayer?.play()
-    }
-
-    fun pause() {
-        exoPlayer?.pause()
+        
+        exoPlayer?.playWhenReady = playWhenReady
     }
 
     fun release() {
@@ -215,43 +220,6 @@ class ExoPlayerManager(private val context: Context) {
     }
 }
 
-@Composable
-fun NoiseScreen(
-    backgroundColor: Color,
-    isPlaying: Boolean,
-    onToggle: () -> Unit
-) {
-    // When ON, button should be a shade lighter.
-    val buttonColor = if (isPlaying) {
-        Color.White.copy(alpha = 0.3f).compositeOver(backgroundColor)
-    } else {
-        backgroundColor
-    }
-    
-    val borderColor = if (backgroundColor.luminance() > 0.5f) Color.Black else Color.White
-
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .fillMaxSize()
-            .background(backgroundColor)
-    ) {
-        val configuration = LocalConfiguration.current
-        val screenWidth = configuration.screenWidthDp.dp
-        val buttonSize = screenWidth * 0.8f
-
-        Box(
-            modifier = Modifier
-                .size(buttonSize)
-                .clip(CircleShape)
-                .background(buttonColor)
-                .border(width = 4.dp, color = borderColor, shape = CircleShape)
-                .clickable { onToggle() }
-        )
-    }
-}
-
-// Helper to check brightness
 fun Color.luminance(): Float {
     return (0.299 * red + 0.587 * green + 0.114 * blue).toFloat()
 }
