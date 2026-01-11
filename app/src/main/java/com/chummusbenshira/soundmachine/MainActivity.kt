@@ -1,5 +1,6 @@
 package com.chummusbenshira.soundmachine
 
+import android.app.Activity
 import android.content.Context
 import android.media.audiofx.LoudnessEnhancer
 import android.os.Bundle
@@ -13,6 +14,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -28,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,10 +39,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
+import androidx.core.view.WindowCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -67,20 +73,29 @@ data class NoisePage(
 @Composable
 @androidx.annotation.OptIn(UnstableApi::class)
 fun SoundMachineApp() {
-    val pages = remember {
-        listOf(
+    val isDarkTheme = isSystemInDarkTheme()
+    val pages = remember(isDarkTheme) {
+        val basePages = listOf(
             NoisePage(R.raw.whitenoise, Color(0xFFFFFAF0)), // Floral White
             NoisePage(R.raw.pinknoise, Color(0xFFFFC0CB)), // Pink
             NoisePage(R.raw.brownnoise, Color(0xFF795548))  // Brown
         )
+
+        if (isDarkTheme) {
+            basePages.map {
+                it.copy(color = Color.Black.copy(alpha = 0.3f).compositeOver(it.color))
+            }
+        } else {
+            basePages
+        }
     }
 
-    val pagerState = rememberPagerState(pageCount = { pages.size })
+    val pagerState = rememberPagerState { pages.size }
     var isPlaying by remember { mutableStateOf(false) }
     var showIndicator by remember { mutableStateOf(false) }
-    
+
     val context = LocalContext.current
-    
+
     val exoPlayerManager = remember {
         ExoPlayerManager(context)
     }
@@ -96,11 +111,11 @@ fun SoundMachineApp() {
     }
 
     // Handle track switching
-    LaunchedEffect(pagerState.currentPage, isPlaying) {
-        val resId = pages[pagerState.currentPage].resId
+    LaunchedEffect(pagerState.settledPage, isPlaying) {
+        val resId = pages[pagerState.settledPage].resId
         exoPlayerManager.setSource(resId, playWhenReady = isPlaying)
     }
-    
+
     // Cleanup
     DisposableEffect(Unit) {
         onDispose {
@@ -112,6 +127,16 @@ fun SoundMachineApp() {
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
+        val view = LocalView.current
+        val currentBackgroundColor = pages[pagerState.settledPage].color
+        if (!view.isInEditMode) {
+            SideEffect {
+                val window = (view.context as Activity).window
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars =
+                    currentBackgroundColor.luminance() > 0.5f
+            }
+        }
+
         Box(modifier = Modifier.fillMaxSize()) {
             // Layer 1: Background Pager
             HorizontalPager(
@@ -135,7 +160,6 @@ fun SoundMachineApp() {
                 val screenHeight = configuration.screenHeightDp.dp
                 val buttonSize = min(screenWidth, screenHeight) * 0.8f
 
-                val currentBackgroundColor = pages[pagerState.currentPage].color
                 val borderColor = if (currentBackgroundColor.luminance() > 0.5f) Color.Black else Color.White
 
                 val buttonFillColor = if (isPlaying) {
@@ -176,9 +200,9 @@ fun SoundMachineApp() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         repeat(pages.size) { iteration ->
-                            val color = if (pagerState.currentPage == iteration) 
-                                MaterialTheme.colorScheme.onSecondaryContainer 
-                            else 
+                            val color = if (pagerState.settledPage == iteration)
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            else
                                 MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
                             Box(
                                 modifier = Modifier
@@ -194,7 +218,7 @@ fun SoundMachineApp() {
     }
 }
 
-@UnstableApi 
+@UnstableApi
 class ExoPlayerManager(private val context: Context) {
     private var exoPlayer: ExoPlayer? = ExoPlayer.Builder(context).build()
     private var currentResId: Int = 0
@@ -229,7 +253,7 @@ class ExoPlayerManager(private val context: Context) {
             exoPlayer?.setMediaItem(mediaItem)
             exoPlayer?.prepare()
         }
-        
+
         exoPlayer?.playWhenReady = playWhenReady
     }
 
