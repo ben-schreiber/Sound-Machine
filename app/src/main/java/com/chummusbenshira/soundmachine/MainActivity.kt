@@ -1,7 +1,9 @@
 package com.chummusbenshira.soundmachine
 
 import android.content.Context
+import android.media.audiofx.LoudnessEnhancer
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -196,9 +198,26 @@ fun SoundMachineApp() {
 class ExoPlayerManager(private val context: Context) {
     private var exoPlayer: ExoPlayer? = ExoPlayer.Builder(context).build()
     private var currentResId: Int = 0
+    private var loudnessEnhancer: LoudnessEnhancer? = null
 
     init {
         exoPlayer?.repeatMode = Player.REPEAT_MODE_ONE
+        exoPlayer?.addListener(object : Player.Listener {
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                if (audioSessionId == 0) return
+
+                loudnessEnhancer?.release()
+
+                try {
+                    loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
+                        setTargetGain(1000)
+                        enabled = true
+                    }
+                } catch (e: Exception) {
+                    Log.e("ExoPlayerManager", "Failed to create LoudnessEnhancer", e)
+                }
+            }
+        })
     }
 
     fun setSource(resId: Int, playWhenReady: Boolean) {
@@ -215,6 +234,8 @@ class ExoPlayerManager(private val context: Context) {
     }
 
     fun release() {
+        loudnessEnhancer?.release()
+        loudnessEnhancer = null
         exoPlayer?.release()
         exoPlayer = null
     }
