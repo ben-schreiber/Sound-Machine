@@ -59,6 +59,9 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.5.0")
     implementation("androidx.media3:media3-common:1.5.0")
 
+    // ViewModel for Compose
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
