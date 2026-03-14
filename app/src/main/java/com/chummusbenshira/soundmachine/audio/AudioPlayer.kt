@@ -1,13 +1,14 @@
 package com.chummusbenshira.soundmachine.audio
 
+import android.content.ComponentName
 import android.content.Context
-import android.media.audiofx.LoudnessEnhancer
-import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.MoreExecutors
 
 interface AudioPlayer {
     fun setSource(resId: Int, playWhenReady: Boolean)
@@ -15,48 +16,60 @@ interface AudioPlayer {
 }
 
 @OptIn(UnstableApi::class)
-class ExoPlayerManager(private val context: Context) : AudioPlayer {
-    private var exoPlayer: ExoPlayer? = ExoPlayer.Builder(context).build()
+class MediaControllerManager(
+    private val context: Context
+) : AudioPlayer {
+    private var mediaController: MediaController? = null
     private var currentResId: Int = 0
-    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var pendingPlayWhenReady: Boolean? = null
 
     init {
-        exoPlayer?.repeatMode = Player.REPEAT_MODE_ONE
-        exoPlayer?.addListener(object : Player.Listener {
-            override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                if (audioSessionId == 0) return
-
-                loudnessEnhancer?.release()
-
-                try {
-                    loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
-                        setTargetGain(1000)
-                        enabled = true
+        val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+        controllerFuture.addListener(
+            {
+                val controller = controllerFuture.get()
+                mediaController = controller
+                controller.repeatMode = Player.REPEAT_MODE_ONE
+                
+                // If setSource was called before controller was ready, apply it now
+                if (currentResId != 0) {
+                    val uri = "android.resource://${context.packageName}/$currentResId"
+                    controller.setMediaItem(MediaItem.fromUri(uri))
+                    controller.prepare()
+                    pendingPlayWhenReady?.let {
+                        if (it) controller.play() else controller.pause()
                     }
-                } catch (e: Exception) {
-                    Log.e("ExoPlayerManager", "Failed to create LoudnessEnhancer", e)
                 }
-            }
-        })
+            },
+            MoreExecutors.directExecutor()
+        )
     }
 
     override fun setSource(resId: Int, playWhenReady: Boolean) {
         val isNewSource = currentResId != resId
-        if (isNewSource) {
-            currentResId = resId
-            val uri = "android.resource://${context.packageName}/$resId"
-            val mediaItem = MediaItem.fromUri(uri)
-            exoPlayer?.setMediaItem(mediaItem)
-            exoPlayer?.prepare()
-        }
+        currentResId = resId
+        pendingPlayWhenReady = playWhenReady
 
-        exoPlayer?.playWhenReady = playWhenReady
+        val controller = mediaController
+        if (controller != null) {
+            if (isNewSource) {
+                val uri = "android.resource://${context.packageName}/$resId"
+                val mediaItem = MediaItem.fromUri(uri)
+                controller.setMediaItem(mediaItem)
+                controller.prepare()
+            }
+
+            if (playWhenReady) {
+                controller.play()
+            } else {
+                controller.pause()
+            }
+        }
     }
 
     override fun release() {
-        loudnessEnhancer?.release()
-        loudnessEnhancer = null
-        exoPlayer?.release()
-        exoPlayer = null
+        mediaController?.release()
+        mediaController = null
     }
 }

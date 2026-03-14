@@ -6,7 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.chummusbenshira.soundmachine.R
 import com.chummusbenshira.soundmachine.audio.AudioPlayer
-import com.chummusbenshira.soundmachine.audio.ExoPlayerManager
+import com.chummusbenshira.soundmachine.audio.MediaControllerManager
 import com.chummusbenshira.soundmachine.ui.theme.Brown
 import com.chummusbenshira.soundmachine.ui.theme.FloralWhite
 import com.chummusbenshira.soundmachine.ui.theme.Pink
@@ -31,7 +31,7 @@ data class SoundMachineUiState(
 
 class SoundMachineViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val audioPlayer: AudioPlayer = ExoPlayerManager(application)
+    private val audioPlayer: AudioPlayer = MediaControllerManager(application)
 
     private val _uiState = MutableStateFlow(SoundMachineUiState())
     val uiState: StateFlow<SoundMachineUiState> = _uiState.asStateFlow()
@@ -42,7 +42,7 @@ class SoundMachineViewModel(application: Application) : AndroidViewModel(applica
 
     private fun loadPages(): List<NoiseInfo> {
         return listOf(
-                NoiseInfo(R.raw.whitenoise, FloralWhite),
+            NoiseInfo(R.raw.whitenoise, FloralWhite),
             NoiseInfo(R.raw.pinknoise, Pink),
             NoiseInfo(R.raw.brownnoise, Brown)
         )
