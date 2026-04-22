@@ -13,6 +13,7 @@ import com.google.common.util.concurrent.MoreExecutors
 interface AudioPlayer {
     fun setSource(resId: Int, playWhenReady: Boolean)
     fun release()
+    fun setOnIsPlayingChangedListener(listener: (Boolean) -> Unit)
 }
 
 @OptIn(UnstableApi::class)
@@ -22,6 +23,13 @@ class MediaControllerManager(
     private var mediaController: MediaController? = null
     private var currentResId: Int = 0
     private var pendingPlayWhenReady: Boolean? = null
+    private var onIsPlayingChangedListener: ((Boolean) -> Unit)? = null
+
+    private val playerListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            onIsPlayingChangedListener?.invoke(isPlaying)
+        }
+    }
 
     init {
         val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
@@ -31,6 +39,10 @@ class MediaControllerManager(
                 val controller = controllerFuture.get()
                 mediaController = controller
                 controller.repeatMode = Player.REPEAT_MODE_ONE
+                controller.addListener(playerListener)
+                
+                // Sync initial state if listener is already set
+                onIsPlayingChangedListener?.invoke(controller.isPlaying)
                 
                 // If setSource was called before controller was ready, apply it now
                 if (currentResId != 0) {
@@ -68,7 +80,13 @@ class MediaControllerManager(
         }
     }
 
+    override fun setOnIsPlayingChangedListener(listener: (Boolean) -> Unit) {
+        onIsPlayingChangedListener = listener
+        mediaController?.let { listener(it.isPlaying) }
+    }
+
     override fun release() {
+        mediaController?.removeListener(playerListener)
         mediaController?.release()
         mediaController = null
     }

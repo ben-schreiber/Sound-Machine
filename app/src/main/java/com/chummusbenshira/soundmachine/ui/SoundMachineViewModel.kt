@@ -38,6 +38,9 @@ class SoundMachineViewModel(application: Application) : AndroidViewModel(applica
 
     init {
         _uiState.update { it.copy(pages = loadPages()) }
+        audioPlayer.setOnIsPlayingChangedListener { isPlaying ->
+            _uiState.update { it.copy(isPlaying = isPlaying) }
+        }
     }
 
     private fun loadPages(): List<NoiseInfo> {
@@ -57,7 +60,9 @@ class SoundMachineViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun onIsPlayingChanged(isPlaying: Boolean) {
-        _uiState.update { it.copy(isPlaying = isPlaying) }
+        // We don't update _uiState here immediately because we'll get a callback 
+        // from the audioPlayer (via MediaController) which will update it for us.
+        // This ensures the UI state is always in sync with the actual playback state.
         audioPlayer.setSource(
             resId = _uiState.value.pages[_uiState.value.currentPage].resId,
             playWhenReady = isPlaying
