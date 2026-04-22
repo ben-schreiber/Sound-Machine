@@ -1,5 +1,6 @@
 package com.chummusbenshira.soundmachine.audio
 
+import android.content.Intent
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -59,6 +60,20 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val player = mediaSession?.player
+        if (player != null) {
+            if (!player.playWhenReady || player.mediaItemCount == 0 || player.playbackState == Player.STATE_ENDED) {
+                stopSelf()
+            } else {
+                player.pause()
+                stopSelf()
+            }
+        } else {
+            stopSelf()
+        }
+    }
 
     override fun onDestroy() {
         mediaSession?.run {
