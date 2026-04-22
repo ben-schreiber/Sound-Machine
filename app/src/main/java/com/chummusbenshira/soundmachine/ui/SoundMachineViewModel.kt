@@ -53,12 +53,6 @@ class SoundMachineViewModel(application: Application) : AndroidViewModel(applica
             ) 
         }
 
-        // Set the initial source so the player is ready at the last used page
-        audioPlayer.setSource(
-            resId = pages[initialPage].resId,
-            playWhenReady = false
-        )
-        
         audioPlayer.setOnIsPlayingChangedListener { isPlaying ->
             _uiState.update { it.copy(isPlaying = isPlaying) }
         }
@@ -73,14 +67,15 @@ class SoundMachineViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun onPageChanged(page: Int) {
-        // We still want to allow the update if it's the first time or a real change.
-        // The UI might call this with the initialPage on first composition.
         val oldPage = _uiState.value.currentPage
         
         _uiState.update { it.copy(currentPage = page) }
         prefs.edit { putInt("last_page", page) }
         
-        if (oldPage != page || page == _uiState.value.initialPage) {
+        // Only trigger a source change if the page has actually changed.
+        // This avoids pausing playback when the app is opened from a notification
+        // and the UI performs its initial layout/composition.
+        if (oldPage != page) {
             audioPlayer.setSource(
                 resId = _uiState.value.pages[page].resId,
                 playWhenReady = _uiState.value.isPlaying
