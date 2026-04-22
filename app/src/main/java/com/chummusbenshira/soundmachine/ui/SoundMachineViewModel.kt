@@ -1,7 +1,9 @@
 package com.chummusbenshira.soundmachine.ui
 
 import android.app.Application
+import android.content.Context
 import androidx.compose.ui.graphics.Color
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.chummusbenshira.soundmachine.R
@@ -19,25 +21,44 @@ import kotlinx.coroutines.launch
 
 data class NoiseInfo(
     val resId: Int,
-    val baseColor: Color // Use Long to store ARGB color
+    val baseColor: Color
 )
 
 data class SoundMachineUiState(
     val pages: List<NoiseInfo> = emptyList(),
     val isPlaying: Boolean = false,
     val showIndicator: Boolean = false,
+    val initialPage: Int = 0,
     val currentPage: Int = 0
 )
 
 class SoundMachineViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val prefs = application.getSharedPreferences("sound_machine_prefs", Context.MODE_PRIVATE)
     private val audioPlayer: AudioPlayer = MediaControllerManager(application)
 
     private val _uiState = MutableStateFlow(SoundMachineUiState())
     val uiState: StateFlow<SoundMachineUiState> = _uiState.asStateFlow()
 
     init {
-        _uiState.update { it.copy(pages = loadPages()) }
+        val savedPage = prefs.getInt("last_page", 0)
+        val pages = loadPages()
+        val initialPage = savedPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+        
+        _uiState.update { 
+            it.copy(
+                pages = pages,
+                initialPage = initialPage,
+                currentPage = initialPage
+            ) 
+        }
+
+        // Set the initial source so the player is ready at the last used page
+        audioPlayer.setSource(
+            resId = pages[initialPage].resId,
+            playWhenReady = false
+        )
+        
         audioPlayer.setOnIsPlayingChangedListener { isPlaying ->
             _uiState.update { it.copy(isPlaying = isPlaying) }
         }
@@ -52,17 +73,22 @@ class SoundMachineViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun onPageChanged(page: Int) {
+        // We still want to allow the update if it's the first time or a real change.
+        // The UI might call this with the initialPage on first composition.
+        val oldPage = _uiState.value.currentPage
+        
         _uiState.update { it.copy(currentPage = page) }
-        audioPlayer.setSource(
-            resId = _uiState.value.pages[page].resId,
-            playWhenReady = _uiState.value.isPlaying
-        )
+        prefs.edit { putInt("last_page", page) }
+        
+        if (oldPage != page || page == _uiState.value.initialPage) {
+            audioPlayer.setSource(
+                resId = _uiState.value.pages[page].resId,
+                playWhenReady = _uiState.value.isPlaying
+            )
+        }
     }
 
     fun onIsPlayingChanged(isPlaying: Boolean) {
-        // We don't update _uiState here immediately because we'll get a callback 
-        // from the audioPlayer (via MediaController) which will update it for us.
-        // This ensures the UI state is always in sync with the actual playback state.
         audioPlayer.setSource(
             resId = _uiState.value.pages[_uiState.value.currentPage].resId,
             playWhenReady = isPlaying

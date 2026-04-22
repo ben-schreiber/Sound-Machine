@@ -55,7 +55,9 @@ fun SoundMachineScreen(viewModel: SoundMachineViewModel = viewModel()) {
         }
     }
 
-    val pagerState = rememberPagerState { pages.size }
+    if (pages.isEmpty()) return
+
+    val pagerState = rememberPagerState(initialPage = uiState.initialPage) { pages.size }
 
     LaunchedEffect(pagerState.isScrollInProgress) {
         viewModel.onIsScrolling(pagerState.isScrollInProgress)
